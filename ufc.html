@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0B0C0D">
+<meta name="apple-mobile-web-app-title" content="Fight Night">
+<!-- Deploy note: serve a 180x180 dark PNG at /apple-touch-icon.png for the home screen icon -->
+<title>Fight night</title>
+<style>
+  :root{
+    --bg:#0B0C0D; --surface:#131517; --line:#22262A;
+    --text:#E9E7E2; --dim:#8B9096; --faint:#565B61;
+    --live:#FF4633; --win:#58E08A;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;border-radius:0;-webkit-tap-highlight-color:transparent}
+  html{background:var(--bg) !important}
+  html,body{min-height:100vh}
+  #app{background:var(--bg);min-height:100vh}
+  body{
+    font-family:var(--mono);background:var(--bg) !important;color:var(--text);
+    font-size:15px;line-height:1.4;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header{
+    background:var(--bg);
+    border-bottom:1px solid var(--line);padding:14px 16px 12px;
+  }
+  .hdr-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  h1{font-size:16px;font-weight:700;letter-spacing:.02em;text-transform:uppercase}
+  .venue{color:var(--dim);font-size:12px;margin-top:3px}
+  .maintime{color:var(--dim);font-size:12px;margin-top:6px}
+  .maintime b{color:var(--text);font-weight:700}
+  .etaline{color:#D9A93F;font-size:12px;margin-top:4px}
+  .etaline b{font-weight:700}
+  .etaline:empty{display:none}
+  .badge{
+    flex-shrink:0;font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    padding:4px 8px;border:1px solid var(--line);color:var(--dim);white-space:nowrap;
+  }
+  .badge.live{border-color:var(--live);color:var(--live)}
+  .badge.snap{border-color:#B98A2E;color:#D9A93F}
+  .badge .dot{display:inline-block;width:6px;height:6px;background:currentColor;margin-right:6px;vertical-align:1px}
+  .badge.live .dot{animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){.badge.live .dot{animation:none}}
+  .updated{font-size:10px;color:var(--faint);margin-top:6px;letter-spacing:.06em}
+
+  main{padding:0 0 48px}
+  .section-label{
+    font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);
+    padding:20px 16px 8px;
+  }
+  .section-label.now{color:var(--live)}
+  .section-label.next{color:var(--text)}
+
+  /* rail + rows */
+  .fight{
+    display:flex;gap:0;border-bottom:1px solid var(--line);background:var(--bg);
+  }
+  .fight.now{background:var(--surface)}
+  .rail{
+    width:40px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;
+    padding-top:18px;position:relative;
+  }
+  .rail::before{
+    content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--line);
+  }
+  .node{
+    position:relative;z-index:1;width:9px;height:9px;background:var(--bg);
+    border:1px solid var(--faint);
+  }
+  .fight.done .node{background:var(--faint);border-color:var(--faint)}
+  .fight.now .node{background:var(--live);border-color:var(--live);animation:pulse 1.4s ease-in-out infinite}
+  @media (prefers-reduced-motion:reduce){.fight.now .node{animation:none}}
+  .fight.next .node{border-color:var(--text)}
+  .fight.seg-main .rail::before{background:rgba(217,169,63,.45)}
+  .fight.seg-main .node{border-color:#D9A93F}
+  .fight.seg-main.done .node{background:#8A6C28;border-color:#8A6C28}
+  .fight.seg-early .rail::before{background:#191C1F}
+  .fight.seg-early .node{border-color:#3A4046}
+  .fight.now .node{background:var(--live) !important;border-color:var(--live) !important}
+  .fight.next .node{border-color:var(--text) !important}
+  .segmark{display:flex;background:var(--bg)}
+  .segmark .rail{padding-top:0;min-height:26px}
+  .segmark .tick{position:relative;z-index:1;width:5px;height:5px;background:var(--faint);margin-top:11px}
+  .segmark.seg-main .rail::before{background:rgba(217,169,63,.45)}
+  .segmark.seg-main .tick{background:#D9A93F}
+  .segmark.seg-early .rail::before{background:#191C1F}
+  .segmark .seglabel{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);align-self:center}
+  .segmark.seg-main .seglabel{color:#D9A93F}
+
+  .fbody{flex:1;padding:14px 16px 16px 4px;min-width:0}
+  .fmeta{display:flex;justify-content:space-between;gap:8px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:2px}
+  .fmeta>span:last-child{text-align:right}
+  .fmeta .wc{color:var(--dim)}
+  .fmeta .tag-main{color:#D9A93F}
+  .fmeta .tag-next{color:var(--text);font-weight:700}
+  .fmeta .tag-live{color:var(--live)}
+  .eta{color:#D9A93F}
+  .evcard{cursor:pointer}
+  .evcard:active{background:#191C1F}
+  .evlabel{font-size:15px;font-weight:700;line-height:1.3;padding:2px 0}
+  .evtime{font-size:11px;color:var(--faint);padding-top:2px}
+  .vsrow{display:grid;grid-template-columns:1fr 34px 1fr;align-items:center;gap:4px;padding:8px 0 0}
+  .corner{display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;min-width:0}
+  .headshot{width:64px;height:64px;background:#1B1E21;overflow:hidden;flex-shrink:0;position:relative}
+  .headshot .ini{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;letter-spacing:.06em;color:var(--faint)}
+  .headshot img{position:relative;width:100%;height:100%;object-fit:cover;object-position:top;display:block;background:#23272B}
+  .vsmid{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);text-align:center}
+  .fight.done .vsmid{color:var(--win);font-size:12px}
+  .fname{font-size:13px;font-weight:400;line-height:1.25;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .frec{font-size:10px;color:var(--faint)}
+  .corner.won .fname{color:var(--win);font-weight:700}
+  .corner.won .headshot{box-shadow:inset 0 0 0 2px var(--win)}
+  .corner.lost{opacity:.45}
+  .corner.lost .headshot img{filter:grayscale(1)}
+  .fight.done .corner.won .fname::after{content:" ✓"}
+  .result{font-size:11px;color:var(--dim);margin-top:10px;letter-spacing:.04em;text-align:center}
+  .cliplinks{display:flex;gap:8px;margin-top:10px;justify-content:center;align-items:center}
+  .cliplinks a{
+    font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--dim);text-decoration:none;border:1px solid var(--line);
+    padding:8px 12px;min-height:34px;display:inline-flex;align-items:center;
+  }
+  .cliplinks a:active{border-color:var(--dim);color:var(--text)}
+
+  .empty{padding:18px 16px;color:var(--faint);font-size:12px}
+  .btnrow{display:flex;gap:8px;margin:14px 16px 0}
+  .btnrow .refresh{flex:1;width:auto;margin:0}
+  .refresh{
+    display:block;width:calc(100% - 32px);margin:28px 16px 0;padding:10px;
+    background:none;border:1px solid var(--line);color:var(--dim);
+    font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+  }
+  .refresh:active{border-color:var(--text);color:var(--text)}
+  .footnote{padding:16px;color:var(--faint);font-size:10px;letter-spacing:.04em;line-height:1.6}
+</style>
+</head>
+<body>
+<header>
+  <div class="hdr-row">
+    <div>
+      <h1 id="evName">Loading</h1>
+      <div class="venue" id="evVenue"></div>
+      <div class="maintime" id="evMain"></div>
+      <div class="etaline" id="evEta"></div>
+    </div>
+    <div class="badge" id="badge"><span class="dot"></span><span id="badgeText">…</span></div>
+  </div>
+  <div class="updated" id="updated"></div>
+</header>
+
+<main id="app"></main>
+
+<script>
+const BUILD = "v9";
+const ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard";
+const POLL_MS = 20000;
+
+/* Snapshot: real card pulled from ESPN, UFC Fight Night Hernandez vs Rodrigues,
+   Golden 1 Center Sacramento, 22-23 Aug 2026 UTC. Same shape as the live feed
+   for the fields the renderer reads. */
+const SNAPSHOT = {"events":[{"name":"UFC Fight Night: Hernandez vs. Rodrigues","date":"2026-08-22T21:00Z","competitions":[
+{"date":"2026-08-22T21:00Z","type":{"abbreviation":"W Strawweight"},"format":{"regulation":{"periods":3}},"venue":{"fullName":"Golden 1 Center","address":{"city":"Sacramento","state":"CA"}},"status":{"period":3,"displayClock":"1:42","type":{"state":"post","description":"Final","detail":"TKO (punches)"}},"competitors":[{"order":1,"winner":true,"athlete":{"id":"5157674","displayName":"Shanelle Dyer"},"records":[{"summary":"7-1-0"}]},{"order":2,"winner":false,"athlete":{"id":"4836482","displayName":"Elise Reed"},"records":[{"summary":"8-5-0"}]}]},
+{"date":"2026-08-22T21:00Z","type":{"abbreviation":"Middleweight"},"format":{"regulation":{"periods":3}},"status":{"period":1,"displayClock":"4:13","type":{"state":"post","description":"Final","detail":"TKO (knee and punches)"}},"competitors":[{"order":1,"winner":false,"athlete":{"id":"5057023","displayName":"Wes Schultz"},"records":[{"summary":"9-3-0"}]},{"order":2,"winner":true,"athlete":{"id":"5291733","displayName":"Jackson McVey"},"records":[{"summary":"7-2-0"}]}]},
+{"date":"2026-08-22T21:00Z","type":{"abbreviation":"Lightweight"},"format":{"regulation":{"periods":3}},"status":{"period":3,"displayClock":"5:00","type":{"state":"post","description":"Final","detail":"Decision (unanimous 29-28 x3)"}},"competitors":[{"order":1,"winner":false,"athlete":{"id":"5085318","displayName":"Gauge Young"},"records":[{"summary":"11-3-0"}]},{"order":2,"winner":true,"athlete":{"id":"5397038","displayName":"Stan Dorsainvil"},"records":[{"summary":"5-0-0"}]}]},
+{"date":"2026-08-22T21:00Z","type":{"abbreviation":"Featherweight"},"format":{"regulation":{"periods":3}},"status":{"period":1,"displayClock":"","type":{"state":"post","description":"Final","detail":"KO (left hook)"}},"competitors":[{"order":1,"winner":true,"athlete":{"id":"5099679","displayName":"Marcio Barbosa"},"records":[{"summary":"18-2-0"}]},{"order":2,"winner":false,"athlete":{"id":"5243186","displayName":"Ryan Kuse"},"records":[{"summary":"9-2-0"}]}]},
+{"date":"2026-08-22T21:00Z","type":{"abbreviation":"Lightweight"},"format":{"regulation":{"periods":3}},"status":{"period":3,"displayClock":"4:59","type":{"state":"post","description":"Final","detail":"Technical submission (arm-triangle)"}},"competitors":[{"order":1,"winner":true,"athlete":{"id":"3163772","displayName":"Chris Padilla"},"records":[{"summary":"17-6-1"}]},{"order":2,"winner":false,"athlete":{"id":"4277795","displayName":"Nasrat Haqparast"},"records":[{"summary":"18-6-0"}]}]},
+{"date":"2026-08-22T21:00Z","type":{"abbreviation":"Heavyweight"},"format":{"regulation":{"periods":3}},"status":{"period":1,"displayClock":"1:20","type":{"state":"post","description":"Final","detail":"KO (right hand)"}},"competitors":[{"order":1,"winner":false,"athlete":{"id":"4245094","displayName":"Kennedy Nzechukwu"},"records":[{"summary":"14-6-1"}]},{"order":2,"winner":true,"athlete":{"id":"5145498","displayName":"Shamil Gaziev"},"records":[{"summary":"14-3-0"}]}]},
+{"date":"2026-08-22T21:00Z","type":{"abbreviation":"Featherweight"},"format":{"regulation":{"periods":3}},"status":{"period":1,"displayClock":"3:38","type":{"state":"post","description":"Final","detail":"TKO (punches)"}},"competitors":[{"order":1,"winner":true,"athlete":{"id":"3915502","displayName":"Jamall Emmers"},"records":[{"summary":"22-8-0"}]},{"order":2,"winner":false,"athlete":{"id":"4958170","displayName":"Lerryan Douglas"},"records":[{"summary":"14-5-0"}]}]},
+{"date":"2026-08-23T00:00Z","type":{"abbreviation":"Heavyweight"},"format":{"regulation":{"periods":3}},"status":{"period":1,"displayClock":"3:12","type":{"state":"in","description":"In Progress","detail":"Round 1"}},"competitors":[{"order":1,"winner":false,"athlete":{"id":"3128853","displayName":"Anthony Wint"},"records":[{"summary":"7-0-0"}]},{"order":2,"winner":false,"athlete":{"id":"5397621","displayName":"Terrance Chatman"},"records":[{"summary":"5-1-0"}]}]},
+{"date":"2026-08-23T00:00Z","type":{"abbreviation":"W Flyweight"},"format":{"regulation":{"periods":3}},"status":{"period":0,"displayClock":"-","type":{"state":"pre","description":"Scheduled","detail":""}},"competitors":[{"order":1,"winner":false,"athlete":{"id":"5172179","displayName":"Carli Judice"},"records":[{"summary":"6-2-0"}]},{"order":2,"winner":false,"athlete":{"id":"5308769","displayName":"Jeisla Chaves"},"records":[{"summary":"8-0-0"}]}]},
+{"date":"2026-08-23T00:00Z","type":{"abbreviation":"Lightweight"},"format":{"regulation":{"periods":3}},"status":{"period":0,"displayClock":"-","type":{"state":"pre","description":"Scheduled","detail":""}},"competitors":[{"order":1,"winner":false,"athlete":{"id":"5157668","displayName":"MarQuel Mederos"},"records":[{"summary":"11-1-1"}]},{"order":2,"winner":false,"athlete":{"id":"4419470","displayName":"Mason Jones"},"records":[{"summary":"18-2-0"}]}]},
+{"date":"2026-08-23T00:00Z","type":{"abbreviation":"Light Heavyweight"},"format":{"regulation":{"periods":3}},"status":{"period":0,"displayClock":"-","type":{"state":"pre","description":"Scheduled","detail":""}},"competitors":[{"order":1,"winner":false,"athlete":{"id":"4423880","displayName":"Reinier de Ridder"},"records":[{"summary":"21-4-0"}]},{"order":2,"winner":false,"athlete":{"id":"4411508","displayName":"Roman Dolidze"},"records":[{"summary":"15-5-0"}]}]},
+{"date":"2026-08-23T00:00Z","type":{"abbreviation":"Heavyweight"},"format":{"regulation":{"periods":3}},"status":{"period":0,"displayClock":"-","type":{"state":"pre","description":"Scheduled","detail":""}},"competitors":[{"order":1,"winner":false,"athlete":{"id":"4421246","displayName":"Serghei Spivac"},"records":[{"summary":"18-6-0"}]},{"order":2,"winner":false,"athlete":{"id":"5060483","displayName":"Vitor Petrino"},"records":[{"summary":"14-2-0"}]}]},
+{"date":"2026-08-23T00:00Z","type":{"abbreviation":"Middleweight"},"format":{"regulation":{"periods":5}},"status":{"period":0,"displayClock":"-","type":{"state":"pre","description":"Scheduled","detail":""}},"competitors":[{"order":1,"winner":false,"athlete":{"id":"4290956","displayName":"Anthony Hernandez"},"records":[{"summary":"15-3-0"}]},{"order":2,"winner":false,"athlete":{"id":"4690541","displayName":"Gregory Rodrigues"},"records":[{"summary":"19-6-0"}]}]}
+],"venues":[{"fullName":"Golden 1 Center","address":{"city":"Sacramento","state":"CA"}}]}]};
+
+const CALENDAR = [
+{"label":"UFC Fight Night: Nurmagomedov vs. Song","date":"2026-08-29T10:00Z","id":"600060620"},
+{"label":"UFC Fight Night: Hooker vs. Parnasse","date":"2026-09-05T19:00Z","id":"600059993"},
+{"label":"Noche UFC: Rodriguez vs. Silva","date":"2026-09-12T21:00Z","id":"600060772"},
+{"label":"UFC 331: Van vs. Pantoja 2","date":"2026-09-20T00:00Z","id":"600060963"},
+{"label":"UFC Fight Night: Rosas Jr. vs. Barcelos","date":"2026-09-26T22:00Z","id":"600061266"},
+{"label":"UFC 332","date":"2026-10-04T00:00Z","id":"600061182"},
+{"label":"UFC Fight Night: Buckley vs. Malott","date":"2026-10-18T00:00Z","id":"600060773"},
+{"label":"UFC 333: Volkanovski vs. Evloev","date":"2026-10-24T17:00Z","id":"600061267"},
+{"label":"UFC Fight Night: Bonfim vs. Brady","date":"2026-11-08T01:00Z","id":"600061268"}
+];
+
+let calendarLive = CALENDAR;
+let view = "event"; // "event" | "upcoming"
+
+let liveMode = false;
+let timer = null;
+
+function esc(s){const d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML;}
+function localTime(iso){
+  try{return new Date(iso).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});}catch(e){return "";}
+}
+function localDay(iso){
+  try{return new Date(iso).toLocaleDateString([], {weekday:"short",day:"numeric",month:"short"});}catch(e){return "";}
+}
+function names(f){
+  const cs=(f.competitors||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0));
+  return cs.map(c=>{
+    const ath=c.athlete||{};
+    const aid=ath.id||c.id; // live scoreboard carries the athlete id on the competitor, not the athlete
+    const pic=(ath.headshot&&ath.headshot.href)||(aid?("https://a.espncdn.com/combiner/i?img=/i/headshots/mma/players/full/"+aid+".png&w=200"):"");
+    return {
+      name:ath.displayName||"TBA",
+      rec:(c.records&&c.records[0]&&c.records[0].summary)||"",
+      winner:!!c.winner,
+      pic:pic
+    };
+  });
+}
+function state(f){
+  const cs=f.competitors||[];
+  if(cs.some(c=>c.winner)) return "post";
+  return (f.status&&f.status.type&&f.status.type.state)||"pre";
+}
+
+
+function harvestCalendar(data){
+  try{
+    const c=data.leagues[0].calendar||[];
+    const out=[];
+    for(const e of c){
+      const ref=(e.event&&e.event.$ref)||"";
+      const m=ref.match(/events\/(\d+)/);
+      out.push({label:e.label,date:e.startDate,id:m?m[1]:""});
+    }
+    if(out.length) calendarLive=out;
+  }catch(_){}
+}
+
+function ymd(iso){
+  const d=new Date(iso);
+  return d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,"0")+String(d.getUTCDate()).padStart(2,"0");
+}
+
+function renderUpcoming(){
+  view="upcoming";
+  const app=document.getElementById("app");
+  document.getElementById("evName").textContent="Upcoming events";
+  document.getElementById("evVenue").textContent="";
+  document.getElementById("evMain").textContent="";
+  document.getElementById("evEta").innerHTML="";
+  const now=Date.now();
+  const future=calendarLive.filter(e=>!/contender series/i.test(e.label)&&new Date(e.date).getTime()>now-6*3600e3).slice(0,10);
+  let html='<div class="section-label">Next · '+future.length+'</div>';
+  future.forEach(e=>{
+    const isPPV=/UFC \d/.test(e.label);
+    html+='<div class="fight evcard" onclick="openEvent(\''+e.id+'\',\''+ymd(e.date)+'\')">'
+      +'<div class="rail"><div class="node"></div></div>'
+      +'<div class="fbody">'
+      +'<div class="fmeta"><span class="wc">'+(isPPV?'<span class="tag-main">PPV</span>':'Fight night')+'</span><span>'+esc(localDay(e.date))+'</span></div>'
+      +'<div class="evlabel">'+esc(e.label)+'</div>'
+      +'<div class="evtime">'+esc(localTime(e.date))+' your time</div>'
+      +'</div></div>';
+  });
+  html+='<div class="footnote">Tap an event for the full card. Detail needs the live feed; in Snapshot mode ESPN can\'t be reached.</div>';
+  app.innerHTML=html;
+}
+
+async function openEvent(id,dateStr){
+  const app=document.getElementById("app");
+  app.innerHTML='<div class="empty">Loading card…</div>';
+  try{
+    const ctrl=new AbortController();
+    const t=setTimeout(()=>ctrl.abort(),6000);
+    const r=await fetch(ESPN_URL+"?dates="+dateStr+"&_="+Date.now(),{cache:"no-store",signal:ctrl.signal});
+    clearTimeout(t);
+    if(!r.ok) throw new Error("http "+r.status);
+    const data=await r.json();
+    view="event";
+    render(data,true,true);
+  }catch(e){
+    app.innerHTML='<div class="empty">Could not load that card. In Snapshot mode the sandbox blocks ESPN; open this file in Safari or host it, then event detail works.</div>'
+      +'<button class="refresh" onclick="renderUpcoming()">Back to upcoming</button>';
+  }
+}
+
+function pickEvent(data){
+  const evs=(data&&data.events)||[];
+  if(!evs.length) return null;
+  const now=Date.now();
+  let best=evs[0],bestD=Infinity;
+  for(const e of evs){
+    const d=Math.abs(new Date(e.date).getTime()-now);
+    if(d<bestD){bestD=d;best=e;}
+  }
+  return best;
+}
+
+function orderedFights(ev){
+  let fights=(ev.competitions||[]).slice();
+  fights.sort((a,b)=>new Date(a.date)-new Date(b.date) || 0);
+  /* if the 5-round main event leads the list, feed is main-event-first: reverse */
+  const p=f=>(f.format&&f.format.regulation&&f.format.regulation.periods)||3;
+  if(fights.length>1 && p(fights[0])===5 && p(fights[fights.length-1])!==5) fights.reverse();
+  return fights;
+}
+
+function fightRow(f, cls, mainCardStart){
+  const [a,b]=names(f);
+  const wc=(f.type&&f.type.abbreviation)||"";
+  const isMain=mainCardStart && f.date===mainCardStart;
+  const st=state(f);
+  const rounds=(f.format&&f.format.regulation&&f.format.regulation.periods)||3;
+  let meta2="";
+  if(st==="in"){
+    const rd=f.status&&f.status.period?("R"+f.status.period):"";
+    const ck=(f.status&&f.status.displayClock&&f.status.displayClock!=="-")?(" · "+f.status.displayClock):"";
+    meta2='<span class="tag-live">Live '+esc(rd)+esc(ck)+"</span>";
+  } else if(st==="pre"){
+    meta2='<span>'+(cls&&cls.indexOf("next")===0?'<span class="tag-next">Next</span> · ':"")
+      +(f._eta?("est ~"+esc(etaTime(f._eta))):esc(localTime(f.date)))+"</span>";
+  } else {
+    meta2="<span>Final</span>";
+  }
+  let html='<div class="fight '+cls+'">'
+    +'<div class="rail"><div class="node"></div></div>'
+    +'<div class="fbody">'
+    +'<div class="fmeta"><span class="wc">'+esc(wc)+(rounds===5?" · 5RD":"")+'</span>'+meta2+'</div>';
+  const ini=n=>n.split(" ").filter(Boolean).map(w=>w[0]).slice(0,2).join("").toUpperCase();
+  const side=(x,pos)=>'<div class="corner '+pos+' '+(st==="post"?(x.winner?"won":"lost"):"")+'">'
+      +'<div class="headshot"><span class="ini">'+esc(ini(x.name))+'</span>'
+      +(x.pic?'<img src="'+esc(x.pic)+'" alt="" referrerpolicy="no-referrer" onerror="console.warn(\'headshot failed:\',this.src);this.style.display=\'none\'">':"")
+      +'</div>'
+      +'<span class="fname">'+esc(x.name)+'</span><span class="frec">'+esc(x.rec)+'</span></div>';
+  let mid="vs";
+  if(st==="post") mid=a.winner?"&#9664;":"&#9654;";
+  html+='<div class="vsrow">'+side(a,"left")+'<div class="vsmid">'+mid+'</div>'+side(b,"right")+'</div>';
+  if(st==="post"){
+    const det=(f.status&&f.status.type&&(f.status.type.detail||f.status.type.description))||"Final";
+    const rd=f.status&&f.status.period?(" · R"+f.status.period):"";
+    const ck=(f.status&&f.status.displayClock&&f.status.displayClock!=="-")?(" "+f.status.displayClock):"";
+    html+='<div class="result">'+esc(det)+esc(rd)+esc(ck)+'</div>';
+    const w=a.winner?a:b, l=a.winner?b:a;
+    const q=encodeURIComponent("UFC "+w.name+" vs "+l.name+" finish");
+    html+='<div class="cliplinks"><a href="https://x.com/search?q='+q+'&f=video" target="_blank" rel="noopener">Clip &#8599;</a></div>';
+  }
+  html+='</div></div>';
+  return html;
+}
+
+function cageMin(f){
+  const p=(f.status&&f.status.period)||0;
+  if(!p) return null;
+  const ck=(f.status&&f.status.displayClock)||"";
+  const m=ck.match(/^(\d+):(\d+)$/);
+  const inRound=m?((+m[1])+(+m[2])/60):5;
+  return (p-1)*5+inRound;
+}
+
+function assignEtas(done, now, pre){
+  // pacing only exists once the event is underway
+  if(!done.length&&!now.length){ pre.forEach(f=>{delete f._eta;}); return; }
+  const cages=done.map(cageMin).filter(x=>x!=null);
+  const avg=cages.length?cages.reduce((a,b)=>a+b,0)/cages.length:9;
+  const perFight=(avg+10)*60000; // cage time + walkouts, replays, interviews
+  const base=Date.now()+(now.length?0.5*perFight:0); // live fight assumed halfway
+  pre.forEach((f,i)=>{f._eta=base+i*perFight;});
+}
+function etaTime(ms){return new Date(ms).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
+
+let lastData=null, lastLive=false;
+
+function render(data, isLive, browsing){
+  lastData=data; lastLive=isLive;
+  harvestCalendar(data);
+  const ev=pickEvent(data);
+  const app=document.getElementById("app");
+  const badge=document.getElementById("badge");
+  const badgeText=document.getElementById("badgeText");
+  badge.className="badge "+(isLive?"live":"snap");
+  badgeText.textContent=isLive?"Live feed":"Snapshot";
+  document.getElementById("updated").textContent="Updated "+new Date().toLocaleTimeString()+" · build "+BUILD;
+
+  if(!ev){
+    renderUpcoming();
+    return;
+  }
+
+  document.getElementById("evName").textContent=ev.name||"UFC";
+  const v=(ev.venues&&ev.venues[0])||(ev.competitions&&ev.competitions[0]&&ev.competitions[0].venue)||null;
+  document.getElementById("evVenue").textContent=v?(v.fullName+(v.address&&v.address.city?(" · "+v.address.city):"")):"";
+
+  const fights=orderedFights(ev);
+  const dates=[...new Set(fights.map(f=>f.date))].sort();
+  const mainCardStart=dates.length>1?dates[dates.length-1]:null;
+  document.getElementById("evMain").innerHTML=mainCardStart
+    ? "Main card <b>"+esc(localTime(mainCardStart))+"</b> · "+esc(localDay(mainCardStart))
+    : "Starts <b>"+esc(localTime(ev.date))+"</b> · "+esc(localDay(ev.date));
+
+  const now=fights.filter(f=>state(f)==="in");
+  const pre=fights.filter(f=>state(f)==="pre");
+  const done=fights.filter(f=>state(f)==="post").reverse();
+
+  assignEtas(done,now,pre);
+  const mainFight=fights.find(f=>((f.format&&f.format.regulation&&f.format.regulation.periods)||3)===5)||fights[fights.length-1]||null;
+  const eta=(mainFight&&mainFight._eta)?(mainFight._eta+5*60000):null;
+  const etaEl=document.getElementById("evEta");
+  if(eta){
+    const outCount=pre.filter(f=>f!==mainFight).length+(now.length?0.5:0);
+    etaEl.innerHTML='Main event est <b>~'
+      +esc(new Date(eta).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}))
+      +'</b> · '+outCount+' fights out';
+    document.getElementById("evMain").innerHTML="";
+  } else { etaEl.innerHTML=""; }
+
+  let html=(browsing
+    ? '<div class="btnrow"><button class="refresh" onclick="renderUpcoming()">Back to upcoming</button></div>'
+    : '<div class="btnrow"><button class="refresh" onclick="load()">Refresh</button><button class="refresh alt" onclick="renderUpcoming()">Upcoming</button></div>');
+  if(!isLive && !done.length && !now.length){
+    html+='<div class="empty">Snapshot was taken before the first fight, so no results exist in this data. Winners, result lines and clip links appear once the app has a live feed and fights go final. Open this file in Safari or host it to go live.</div>';
+  }
+  const total=pre.length+now.length+done.length;
+  if(total){
+    // segment per start time: last group = main card, then prelims, then early prelims
+    const segNames=["Main card","Prelims","Early prelims"];
+    const segCls=["seg-main","seg-prelim","seg-early"];
+    const segOf={};
+    dates.slice().reverse().forEach((d,i)=>{segOf[d]={label:segNames[Math.min(i,2)],cls:segCls[Math.min(i,2)]}});
+    const multi=dates.length>1;
+
+    html+='<div class="section-label">Card · '+done.length+' of '+total+' done</div>';
+    const seq=[];
+    const list=pre.slice().reverse();
+    list.forEach((f,i)=>seq.push([f, i===list.length-1?"next":""]));
+    now.forEach(f=>seq.push([f,"now"]));
+    done.forEach(f=>seq.push([f,"done"]));
+    let lastSeg=null;
+    seq.forEach(([f,cls])=>{
+      const seg=segOf[f.date]||{label:"",cls:""};
+      if(multi&&seg.label!==lastSeg){
+        html+='<div class="segmark '+seg.cls+'"><div class="rail"><div class="tick"></div></div><div class="seglabel">'+esc(seg.label)+'</div></div>';
+        lastSeg=seg.label;
+      }
+      html+=fightRow(f, cls+(seg.cls?" "+seg.cls:""), mainCardStart);
+    });
+  }
+  if(!now.length&&!pre.length&&!done.length){
+    html+='<div class="empty">Card is empty.</div>';
+  }
+
+
+  app.innerHTML=html;
+}
+
+async function load(){
+  try{
+    const ctrl=new AbortController();
+    const t=setTimeout(()=>ctrl.abort(),6000);
+    const r=await fetch(ESPN_URL+"?_="+Date.now(),{cache:"no-store",signal:ctrl.signal});
+    clearTimeout(t);
+    if(!r.ok) throw new Error("http "+r.status);
+    const data=await r.json();
+    liveMode=true;
+    harvestCalendar(data);
+    if(view==="event") render(data,true);
+  }catch(e){
+    liveMode=false;
+    if(view==="event") render(SNAPSHOT,false);
+  }
+  if(timer) clearInterval(timer);
+  if(liveMode) timer=setInterval(load,POLL_MS);
+}
+load();
+setInterval(function(){ if(view==="event"&&lastData) render(lastData,lastLive); },60000);
+</script>
+</body>
+</html>
