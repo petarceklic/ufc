@@ -114,6 +114,8 @@
   .fight.done .vsmid{color:var(--win);font-size:12px}
   .fname{font-size:13px;font-weight:400;line-height:1.25;max-width:100%;overflow:hidden;text-overflow:ellipsis}
   .frec{font-size:10px;color:var(--faint)}
+  .fodds{font-size:10px;letter-spacing:.06em;color:var(--faint);opacity:.8}
+  .fodds.fav{color:var(--dim);opacity:1}
   .corner.won .fname{color:var(--win);font-weight:700}
   .corner.won .headshot{box-shadow:inset 0 0 0 2px var(--win)}
   .corner.lost{opacity:.45}
@@ -157,9 +159,10 @@
 <main id="app"></main>
 
 <script>
-const BUILD = "v9";
+const BUILD = "v10";
 const ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard";
 const POLL_MS = 20000;
+const ODDS_URL = "odds.json"; // written by .github/workflows/odds.yml (scraped from ufc.com)
 
 /* Snapshot: real card pulled from ESPN, UFC Fight Night Hernandez vs Rodrigues,
    Golden 1 Center Sacramento, 22-23 Aug 2026 UTC. Same shape as the live feed
@@ -197,6 +200,41 @@ let view = "event"; // "event" | "upcoming"
 
 let liveMode = false;
 let timer = null;
+let browsing = false;   // true while viewing a card opened from the Upcoming list
+let lastFetch = null;   // ms timestamp of the data currently on screen
+let odds = null;        // {fights:[{a,b,oa,ob}], updated}
+let oddsIndex = null;   // normalized "a|b" -> fight
+
+/* ---- odds ---- */
+function normName(s){
+  return String(s||"").normalize("NFKD").replace(/[̀-ͯ]/g,"").toLowerCase()
+    .replace(/\b(jr|sr|ii|iii)\b\.?/g,"").replace(/[^a-z ]/g," ").replace(/\s+/g," ").trim();
+}
+function surname(s){const p=normName(s).split(" ");return p[p.length-1]||"";}
+function buildOddsIndex(){
+  oddsIndex={};
+  for(const f of (odds&&odds.fights)||[]){
+    oddsIndex[normName(f.a)+"|"+normName(f.b)]=f;
+    oddsIndex[surname(f.a)+"|"+surname(f.b)]=oddsIndex[surname(f.a)+"|"+surname(f.b)]||f;
+  }
+}
+function oddsFor(a,b){
+  if(!oddsIndex) return null;
+  let f=oddsIndex[normName(a)+"|"+normName(b)]; if(f) return {a:f.oa,b:f.ob};
+  f=oddsIndex[normName(b)+"|"+normName(a)]; if(f) return {a:f.ob,b:f.oa};
+  f=oddsIndex[surname(a)+"|"+surname(b)]; if(f) return {a:f.oa,b:f.ob};
+  f=oddsIndex[surname(b)+"|"+surname(a)]; if(f) return {a:f.ob,b:f.oa};
+  return null;
+}
+function fmtOdds(n){return (n>0?"+":"−")+Math.abs(n);}
+async function loadOdds(){
+  try{
+    const r=await fetch(ODDS_URL+"?_="+Math.floor(Date.now()/600000),{cache:"no-cache"});
+    if(!r.ok) throw new Error("http "+r.status);
+    odds=await r.json(); buildOddsIndex();
+    if(view==="event"&&lastData) render(lastData,lastLive,browsing);
+  }catch(e){ odds=null; oddsIndex=null; }
+}
 
 function esc(s){const d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML;}
 function localTime(iso){
@@ -207,6 +245,7 @@ function localDay(iso){
 }
 function names(f){
   const cs=(f.competitors||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0));
+  while(cs.length<2) cs.push({}); // ESPN occasionally ships a TBA slot with one competitor
   return cs.map(c=>{
     const ath=c.athlete||{};
     const aid=ath.id||c.id; // live scoreboard carries the athlete id on the competitor, not the athlete
@@ -245,7 +284,7 @@ function ymd(iso){
 }
 
 function renderUpcoming(){
-  view="upcoming";
+  view="upcoming"; browsing=false;
   const app=document.getElementById("app");
   document.getElementById("evName").textContent="Upcoming events";
   document.getElementById("evVenue").textContent="";
@@ -274,11 +313,20 @@ async function openEvent(id,dateStr){
   try{
     const ctrl=new AbortController();
     const t=setTimeout(()=>ctrl.abort(),6000);
-    const r=await fetch(ESPN_URL+"?dates="+dateStr+"&_="+Date.now(),{cache:"no-store",signal:ctrl.signal});
+    /* ESPN keys ?dates= on the event's local day and the event date is the prelim start,
+       so a 00:00Z main card lands on the previous UTC day. Ask for prev day..day. */
+    const d=new Date(Date.UTC(+dateStr.slice(0,4),+dateStr.slice(4,6)-1,+dateStr.slice(6,8)));
+    const prev=ymd(new Date(d.getTime()-864e5).toISOString());
+    const r=await fetch(ESPN_URL+"?dates="+prev+"-"+dateStr+"&_="+Date.now(),{cache:"no-store",signal:ctrl.signal});
     clearTimeout(t);
     if(!r.ok) throw new Error("http "+r.status);
     const data=await r.json();
-    view="event";
+    if(id&&data.events&&data.events.length>1){
+      const hit=data.events.filter(e=>String(e.id)===String(id));
+      if(hit.length) data.events=hit;
+    }
+    if(!data.events||!data.events.length) throw new Error("no events");
+    view="event"; browsing=true; lastFetch=Date.now();
     render(data,true,true);
   }catch(e){
     app.innerHTML='<div class="empty">Could not load that card. In Snapshot mode the sandbox blocks ESPN; open this file in Safari or host it, then event detail works.</div>'
@@ -310,8 +358,8 @@ function orderedFights(ev){
 function fightRow(f, cls, mainCardStart){
   const [a,b]=names(f);
   const wc=(f.type&&f.type.abbreviation)||"";
-  const isMain=mainCardStart && f.date===mainCardStart;
   const st=state(f);
+  const od=oddsFor(a.name,b.name);
   const rounds=(f.format&&f.format.regulation&&f.format.regulation.periods)||3;
   let meta2="";
   if(st==="in"){
@@ -329,14 +377,19 @@ function fightRow(f, cls, mainCardStart){
     +'<div class="fbody">'
     +'<div class="fmeta"><span class="wc">'+esc(wc)+(rounds===5?" · 5RD":"")+'</span>'+meta2+'</div>';
   const ini=n=>n.split(" ").filter(Boolean).map(w=>w[0]).slice(0,2).join("").toUpperCase();
-  const side=(x,pos)=>'<div class="corner '+pos+' '+(st==="post"?(x.winner?"won":"lost"):"")+'">'
+  const oddsTag=(o,other)=>{
+    if(o==null) return "";
+    const fav=o<other, pick=o===other?"pick":(fav?"fav":"dog");
+    return '<span class="fodds '+pick+'">'+esc(fmtOdds(o))+'</span>';
+  };
+  const side=(x,pos,o,other)=>'<div class="corner '+pos+' '+(st==="post"?(x.winner?"won":"lost"):"")+'">'
       +'<div class="headshot"><span class="ini">'+esc(ini(x.name))+'</span>'
-      +(x.pic?'<img src="'+esc(x.pic)+'" alt="" referrerpolicy="no-referrer" onerror="console.warn(\'headshot failed:\',this.src);this.style.display=\'none\'">':"")
+      +(x.pic?'<img src="'+esc(x.pic)+'" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">':"")
       +'</div>'
-      +'<span class="fname">'+esc(x.name)+'</span><span class="frec">'+esc(x.rec)+'</span></div>';
+      +'<span class="fname">'+esc(x.name)+'</span><span class="frec">'+esc(x.rec)+'</span>'+oddsTag(o,other)+'</div>';
   let mid="vs";
   if(st==="post") mid=a.winner?"&#9664;":"&#9654;";
-  html+='<div class="vsrow">'+side(a,"left")+'<div class="vsmid">'+mid+'</div>'+side(b,"right")+'</div>';
+  html+='<div class="vsrow">'+side(a,"left",od?od.a:null,od?od.b:null)+'<div class="vsmid">'+mid+'</div>'+side(b,"right",od?od.b:null,od?od.a:null)+'</div>';
   if(st==="post"){
     const det=(f.status&&f.status.type&&(f.status.type.detail||f.status.type.description))||"Final";
     const rd=f.status&&f.status.period?(" · R"+f.status.period):"";
@@ -365,7 +418,12 @@ function assignEtas(done, now, pre){
   const cages=done.map(cageMin).filter(x=>x!=null);
   const avg=cages.length?cages.reduce((a,b)=>a+b,0)/cages.length:9;
   const perFight=(avg+10)*60000; // cage time + walkouts, replays, interviews
-  const base=Date.now()+(now.length?0.5*perFight:0); // live fight assumed halfway
+  let base=Date.now();
+  if(now.length){
+    // remaining cage time for the live fight (at least a couple of minutes) + turnaround
+    const el=cageMin(now[0])||0;
+    base+=(Math.max(avg-el,2)+10)*60000;
+  }
   pre.forEach((f,i)=>{f._eta=base+i*perFight;});
 }
 function etaTime(ms){return new Date(ms).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
@@ -381,7 +439,8 @@ function render(data, isLive, browsing){
   const badgeText=document.getElementById("badgeText");
   badge.className="badge "+(isLive?"live":"snap");
   badgeText.textContent=isLive?"Live feed":"Snapshot";
-  document.getElementById("updated").textContent="Updated "+new Date().toLocaleTimeString()+" · build "+BUILD;
+  document.getElementById("updated").textContent="Updated "+new Date(lastFetch||Date.now()).toLocaleTimeString()
+    +(odds&&odds.updated?" · odds ufc.com":"")+" · build "+BUILD;
 
   if(!ev){
     renderUpcoming();
@@ -404,14 +463,17 @@ function render(data, isLive, browsing){
   const done=fights.filter(f=>state(f)==="post").reverse();
 
   assignEtas(done,now,pre);
-  const mainFight=fights.find(f=>((f.format&&f.format.regulation&&f.format.regulation.periods)||3)===5)||fights[fights.length-1]||null;
+  const fiveRd=fights.filter(f=>((f.format&&f.format.regulation&&f.format.regulation.periods)||3)===5);
+  const mainFight=fiveRd[fiveRd.length-1]||fights[fights.length-1]||null; // last 5-rounder = main event
   const eta=(mainFight&&mainFight._eta)?(mainFight._eta+5*60000):null;
   const etaEl=document.getElementById("evEta");
   if(eta){
-    const outCount=pre.filter(f=>f!==mainFight).length+(now.length?0.5:0);
+    const outCount=pre.filter(f=>f!==mainFight).length;
+    const outTxt=outCount===0?(now.length?"after the live fight":"up next")
+      :outCount+(outCount===1?" fight":" fights")+(now.length?" + live":"")+" out";
     etaEl.innerHTML='Main event est <b>~'
       +esc(new Date(eta).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}))
-      +'</b> · '+outCount+' fights out';
+      +'</b> · '+esc(outTxt);
     document.getElementById("evMain").innerHTML="";
   } else { etaEl.innerHTML=""; }
 
@@ -464,16 +526,22 @@ async function load(){
     const data=await r.json();
     liveMode=true;
     harvestCalendar(data);
-    if(view==="event") render(data,true);
+    if(view==="event"&&!browsing){ lastFetch=Date.now(); render(data,true); }
   }catch(e){
     liveMode=false;
-    if(view==="event") render(SNAPSHOT,false);
+    if(view==="event"&&!browsing){ lastFetch=lastFetch||Date.now(); render(SNAPSHOT,false); }
   }
   if(timer) clearInterval(timer);
   if(liveMode) timer=setInterval(load,POLL_MS);
 }
 load();
-setInterval(function(){ if(view==="event"&&lastData) render(lastData,lastLive); },60000);
+loadOdds();
+/* re-render every minute so ETAs move; browsing flag preserved so the Back button survives */
+setInterval(function(){ if(view==="event"&&lastData) render(lastData,lastLive,browsing); },60000);
+/* home-screen app: timers pause in the background, so refresh the moment it's reopened */
+document.addEventListener("visibilitychange",function(){
+  if(document.visibilityState==="visible"&&!browsing){ load(); loadOdds(); }
+});
 </script>
 </body>
 </html>

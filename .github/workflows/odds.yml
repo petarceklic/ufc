@@ -1,0 +1,30 @@
+name: odds
+
+on:
+  schedule:
+    - cron: "0 */6 * * 1-4"   # Mon–Thu: every 6h
+    - cron: "0 * * * 5,6,0"   # Fri–Sun (fight weekends): hourly
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: odds
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scrape ufc.com odds
+        run: python3 scripts/odds.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add odds.json
+          if git diff --cached --quiet; then echo "no change"; exit 0; fi
+          git commit -m "odds: update $(date -u +%FT%TZ)"
+          git push
