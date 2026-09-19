@@ -117,6 +117,14 @@
   .fodds{font-size:10px;letter-spacing:.06em;color:var(--faint)}
   .fodds .lbl{letter-spacing:.12em;text-transform:uppercase;font-size:9px}
   .fodds.fav{color:var(--dim)}
+  .fprob{margin-left:5px;color:var(--text);font-weight:700}
+  .fodds.dog .fprob{color:var(--dim);font-weight:400}
+  .probbar{display:flex;height:2px;margin:10px 0 0;background:var(--line)}
+  .probbar span{display:block;height:100%}
+  .probbar .pa{background:var(--dim)}
+  .probbar .pb{background:#3A4046}
+  .fight.seg-main .probbar .pa{background:#D9A93F}
+  .fight.seg-main .probbar .pb{background:#5A4A22}
   .corner.won .fname{color:var(--win);font-weight:700}
   .corner.won .headshot{box-shadow:inset 0 0 0 2px var(--win)}
   .corner.lost{opacity:.45}
@@ -160,7 +168,7 @@
 <main id="app"></main>
 
 <script>
-const BUILD = "v11";
+const BUILD = "v12";
 const ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard";
 const POLL_MS = 20000;
 const ODDS_URL = "odds.json"; // written by .github/workflows/odds.yml (scraped from ufc.com)
@@ -228,6 +236,18 @@ function oddsFor(a,b){
   return null;
 }
 function fmtOdds(n){return (n>0?"+":"−")+Math.abs(n);}
+// American odds -> implied probability. Books build in a margin ("vig"), so the two
+// raw probabilities sum past 100%; normalising against the pair strips it out and
+// gives the market's actual read on the fight.
+function impliedProb(o){return o==null?null:(o>0?100/(o+100):(-o)/((-o)+100));}
+function devig(a,b){
+  const pa=impliedProb(a), pb=impliedProb(b);
+  if(pa==null||pb==null) return null;
+  const t=pa+pb;
+  if(!(t>0)) return null;
+  return {a:pa/t, b:pb/t};
+}
+function pctText(p){return Math.round(p*100)+"%";}
 async function loadOdds(){
   try{
     const r=await fetch(ODDS_URL+"?_="+Math.floor(Date.now()/600000),{cache:"no-cache"});
@@ -378,20 +398,30 @@ function fightRow(f, cls, mainCardStart){
     +'<div class="fbody">'
     +'<div class="fmeta"><span class="wc">'+esc(wc)+(rounds===5?" · 5RD":"")+'</span>'+meta2+'</div>';
   const ini=n=>n.split(" ").filter(Boolean).map(w=>w[0]).slice(0,2).join("").toUpperCase();
-  const oddsTag=(o,other)=>{
+  const dv=od?devig(od.a,od.b):null;
+  const oddsTag=(o,other,p)=>{
     if(o==null) return "";
     const fav=o<other, pick=o===other?"pick":(fav?"fav":"dog");
     const lbl=pick==="pick"?"pick":(fav?"fav":"dog");
-    return '<span class="fodds '+pick+'"><span class="lbl">'+lbl+'</span> '+esc(fmtOdds(o))+'</span>';
+    return '<span class="fodds '+pick+'"><span class="lbl">'+lbl+'</span> '+esc(fmtOdds(o))
+      +(p!=null?'<span class="fprob">'+esc(pctText(p))+'</span>':"")+'</span>';
   };
   const side=(x,pos,o,other)=>'<div class="corner '+pos+' '+(st==="post"?(x.winner?"won":"lost"):"")+'">'
       +'<div class="headshot"><span class="ini">'+esc(ini(x.name))+'</span>'
       +(x.pic?'<img src="'+esc(x.pic)+'" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">':"")
       +'</div>'
-      +'<span class="fname">'+esc(x.name)+'</span><span class="frec">'+esc(x.rec)+'</span>'+oddsTag(o,other)+'</div>';
+      +'<span class="fname">'+esc(x.name)+'</span><span class="frec">'+esc(x.rec)+'</span>'
+      +oddsTag(o,other,dv?(pos==="left"?dv.a:dv.b):null)+'</div>';
   let mid="vs";
   if(st==="post") mid=a.winner?"&#9664;":"&#9654;";
   html+='<div class="vsrow">'+side(a,"left",od?od.a:null,od?od.b:null)+'<div class="vsmid">'+mid+'</div>'+side(b,"right",od?od.b:null,od?od.a:null)+'</div>';
+  if(dv){
+    // market split: wider side = the favourite. Purely a read of the two prices.
+    html+='<div class="probbar" role="img" aria-label="Market odds: '
+      +esc(a.name)+' '+esc(pctText(dv.a))+', '+esc(b.name)+' '+esc(pctText(dv.b))+'">'
+      +'<span class="pa" style="width:'+(dv.a*100).toFixed(1)+'%"></span>'
+      +'<span class="pb" style="width:'+(dv.b*100).toFixed(1)+'%"></span></div>';
+  }
   if(st==="post"){
     const det=(f.status&&f.status.type&&(f.status.type.detail||f.status.type.description))||"Final";
     const rd=f.status&&f.status.period?(" · R"+f.status.period):"";

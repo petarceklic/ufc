@@ -46,34 +46,53 @@ def event_slugs(listing):
     return out
 
 
+def corner_name(blk, color):
+    """Fighter name from one corner.
+
+    ufc.com renders corners two ways: given-name + family-name spans for most
+    fighters, and a single flat text node for others (ring names like
+    "Patricio Pitbull", and some late additions). Take the whole corner div and
+    strip tags, which covers both without caring which shape it is.
+    """
+    m = re.search(
+        r'c-listing-fight__corner-name--%s">(.*?)</div>' % color, blk, re.S)
+    return clean(m.group(1)) if m else ""
+
+
 def parse_event(page, slug):
     fights = []
     seen = set()
+    no_odds = 0
     blocks = re.split(r'<div class="c-listing-fight" data-fmid="', page)[1:]
     for blk in blocks:
         fmid = blk.split('"', 1)[0]
         if fmid in seen:
             continue
         seen.add(fmid)
-        names = re.findall(
-            r'c-listing-fight__corner-name--(red|blue)">.*?'
-            r'<span class="c-listing-fight__corner-given-name">(.*?)</span>\s*'
-            r'<span class="c-listing-fight__corner-family-name">(.*?)</span>',
-            blk, re.S)
-        red = next((clean(g + " " + f) for c, g, f in names if c == "red"), "")
-        blue = next((clean(g + " " + f) for c, g, f in names if c == "blue"), "")
+        red = corner_name(blk, "red")
+        blue = corner_name(blk, "blue")
         if not red or not blue:
+            print(f"  {slug}: fmid {fmid} has no parsable names", file=sys.stderr)
             continue
         odds = re.findall(r'c-listing-fight__odds-amount">\s*([+-]?\d+)\s*<', blk)
+        # Keep the fight even with no line posted (late bookings, pulled fights).
+        # null tells the app "no odds yet"; dropping the row would hide the bout.
         if len(odds) < 2:
-            continue
+            no_odds += 1
+            oa = ob = None
+        else:
+            oa, ob = int(odds[0]), int(odds[1])
         wc = re.search(r'c-listing-fight__class-text">(.*?)</div>', blk, re.S)
         fights.append({
             "event": slug.rsplit("/", 1)[-1],
             "a": red, "b": blue,
-            "oa": int(odds[0]), "ob": int(odds[1]),
+            "oa": oa, "ob": ob,
             "wc": clean(wc.group(1)) if wc else "",
         })
+    if len(fights) < len(seen):
+        print(f"  {slug}: parsed {len(fights)} of {len(seen)} fight blocks", file=sys.stderr)
+    if no_odds:
+        print(f"  {slug}: {no_odds} fight(s) have no line posted yet", file=sys.stderr)
     return fights
 
 
@@ -91,7 +110,7 @@ def main():
             print(f"skip {slug}: {e}", file=sys.stderr)
             continue
         f = parse_event(page, slug)
-        print(f"{slug}: {len(f)} fights with odds", file=sys.stderr)
+        print(f"{slug}: {len(f)} fights", file=sys.stderr)
         events.append({"event": slug.rsplit("/", 1)[-1], "fights": len(f)})
         fights.extend(f)
     out = {
