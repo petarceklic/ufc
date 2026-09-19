@@ -168,7 +168,7 @@
 <main id="app"></main>
 
 <script>
-const BUILD = "v12";
+const BUILD = "v13";
 const ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard";
 const POLL_MS = 20000;
 const ODDS_URL = "odds.json"; // written by .github/workflows/odds.yml (scraped from ufc.com)
@@ -213,6 +213,7 @@ let browsing = false;   // true while viewing a card opened from the Upcoming li
 let lastFetch = null;   // ms timestamp of the data currently on screen
 let odds = null;        // {fights:[{a,b,oa,ob}], updated}
 let oddsIndex = null;   // normalized "a|b" -> fight
+let oddsErr = null;     // why odds are missing, shown in the header
 
 /* ---- odds ---- */
 function normName(s){
@@ -251,10 +252,20 @@ function pctText(p){return Math.round(p*100)+"%";}
 async function loadOdds(){
   try{
     const r=await fetch(ODDS_URL+"?_="+Math.floor(Date.now()/600000),{cache:"no-cache"});
-    if(!r.ok) throw new Error("http "+r.status);
-    odds=await r.json(); buildOddsIndex();
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    odds=await r.json(); buildOddsIndex(); oddsErr=null;
     if(view==="event"&&lastData) render(lastData,lastLive,browsing);
-  }catch(e){ odds=null; oddsIndex=null; }
+  }catch(e){
+    odds=null; oddsIndex=null;
+    // Say why odds are missing instead of rendering a card that looks fine but
+    // silently has none. Opening index.html directly is the usual cause: fetch
+    // cannot read a sibling file over file://, so it needs to be served.
+    const served=location.protocol==="http:"||location.protocol==="https:";
+    oddsErr=served
+      ? "odds unavailable ("+(e&&e.message?e.message:"fetch failed")+")"
+      : "odds need a server (opened as "+location.protocol+")";
+    if(view==="event"&&lastData) render(lastData,lastLive,browsing);
+  }
 }
 
 function esc(s){const d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML;}
@@ -497,7 +508,7 @@ function render(data, isLive, browsing){
   badge.className="badge "+(isLive?"live":"snap");
   badgeText.textContent=isLive?"Live feed":"Snapshot";
   document.getElementById("updated").textContent="Updated "+new Date(lastFetch||Date.now()).toLocaleTimeString()
-    +(odds&&odds.updated?" · odds ufc.com":"")+" · build "+BUILD;
+    +(odds&&odds.updated?" · odds ufc.com":(oddsErr?" · "+oddsErr:""))+" · build "+BUILD;
 
   if(!ev){
     renderUpcoming();
