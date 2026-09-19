@@ -34,20 +34,7 @@
   .venue{color:var(--dim);font-size:12px;margin-top:3px}
   .maintime{color:var(--dim);font-size:12px;margin-top:6px}
   .maintime b{color:var(--text);font-weight:700}
-  .etaline{color:#D9A93F;font-size:12px;margin-top:4px}
-  .etaline b{font-weight:700}
-  .etaline:empty{display:none}
-  .badge{
-    flex-shrink:0;font-size:10px;letter-spacing:.14em;text-transform:uppercase;
-    padding:4px 8px;border:1px solid var(--line);color:var(--dim);white-space:nowrap;
-  }
-  .badge.live{border-color:var(--live);color:var(--live)}
-  .badge.snap{border-color:#B98A2E;color:#D9A93F}
-  .badge .dot{display:inline-block;width:6px;height:6px;background:currentColor;margin-right:6px;vertical-align:1px}
-  .badge.live .dot{animation:pulse 1.4s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
-  @media (prefers-reduced-motion:reduce){.badge.live .dot{animation:none}}
-  .updated{font-size:10px;color:var(--faint);margin-top:6px;letter-spacing:.06em}
 
   main{padding:0 0 48px}
   .section-label{
@@ -107,7 +94,7 @@
   .evtime{font-size:11px;color:var(--faint);padding-top:2px}
   .vsrow{display:grid;grid-template-columns:1fr 34px 1fr;align-items:center;gap:4px;padding:8px 0 0}
   .corner{display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;min-width:0}
-  .headshot{width:64px;height:64px;background:#1B1E21;overflow:hidden;flex-shrink:0;position:relative}
+  .headshot{width:64px;height:64px;background:#1B1E21;overflow:hidden;flex-shrink:0;position:relative;border-radius:50%}
   .headshot .ini{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;letter-spacing:.06em;color:var(--faint)}
   .headshot img{position:relative;width:100%;height:100%;object-fit:cover;object-position:top;display:block;background:#23272B}
   .vsmid{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);text-align:center}
@@ -119,12 +106,6 @@
   .fodds.fav{color:var(--dim)}
   .fprob{margin-left:5px;color:var(--text);font-weight:700}
   .fodds.dog .fprob{color:var(--dim);font-weight:400}
-  .probbar{display:flex;height:2px;margin:10px 0 0;background:var(--line)}
-  .probbar span{display:block;height:100%}
-  .probbar .pa{background:var(--dim)}
-  .probbar .pb{background:#3A4046}
-  .fight.seg-main .probbar .pa{background:#D9A93F}
-  .fight.seg-main .probbar .pb{background:#5A4A22}
   .corner.won .fname{color:var(--win);font-weight:700}
   .corner.won .headshot{box-shadow:inset 0 0 0 2px var(--win)}
   .corner.lost{opacity:.45}
@@ -140,8 +121,12 @@
   .cliplinks a:active{border-color:var(--dim);color:var(--text)}
 
   .empty{padding:18px 16px;color:var(--faint);font-size:12px}
-  .btnrow{display:flex;gap:8px;margin:14px 16px 0}
-  .btnrow .refresh{flex:1;width:auto;margin:0}
+  .navbtn{
+    flex-shrink:0;background:none;border:1px solid var(--line);color:var(--dim);
+    font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    padding:6px 10px;min-height:32px;cursor:pointer;
+  }
+  .navbtn:active{border-color:var(--text);color:var(--text)}
   .refresh{
     display:block;width:calc(100% - 32px);margin:28px 16px 0;padding:10px;
     background:none;border:1px solid var(--line);color:var(--dim);
@@ -158,21 +143,16 @@
       <h1 id="evName">Loading</h1>
       <div class="venue" id="evVenue"></div>
       <div class="maintime" id="evMain"></div>
-      <div class="etaline" id="evEta"></div>
     </div>
-    <div class="badge" id="badge"><span class="dot"></span><span id="badgeText">…</span></div>
+    <button class="navbtn" id="navBtn" onclick="renderUpcoming()">Upcoming</button>
   </div>
-  <div class="updated" id="updated"></div>
 </header>
-
 <main id="app"></main>
-
 <script>
-const BUILD = "v13";
+const BUILD = "v18";
 const ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard";
 const POLL_MS = 20000;
 const ODDS_URL = "odds.json"; // written by .github/workflows/odds.yml (scraped from ufc.com)
-
 /* Snapshot: real card pulled from ESPN, UFC Fight Night Hernandez vs Rodrigues,
    Golden 1 Center Sacramento, 22-23 Aug 2026 UTC. Same shape as the live feed
    for the fields the renderer reads. */
@@ -191,7 +171,6 @@ const SNAPSHOT = {"events":[{"name":"UFC Fight Night: Hernandez vs. Rodrigues","
 {"date":"2026-08-23T00:00Z","type":{"abbreviation":"Heavyweight"},"format":{"regulation":{"periods":3}},"status":{"period":0,"displayClock":"-","type":{"state":"pre","description":"Scheduled","detail":""}},"competitors":[{"order":1,"winner":false,"athlete":{"id":"4421246","displayName":"Serghei Spivac"},"records":[{"summary":"18-6-0"}]},{"order":2,"winner":false,"athlete":{"id":"5060483","displayName":"Vitor Petrino"},"records":[{"summary":"14-2-0"}]}]},
 {"date":"2026-08-23T00:00Z","type":{"abbreviation":"Middleweight"},"format":{"regulation":{"periods":5}},"status":{"period":0,"displayClock":"-","type":{"state":"pre","description":"Scheduled","detail":""}},"competitors":[{"order":1,"winner":false,"athlete":{"id":"4290956","displayName":"Anthony Hernandez"},"records":[{"summary":"15-3-0"}]},{"order":2,"winner":false,"athlete":{"id":"4690541","displayName":"Gregory Rodrigues"},"records":[{"summary":"19-6-0"}]}]}
 ],"venues":[{"fullName":"Golden 1 Center","address":{"city":"Sacramento","state":"CA"}}]}]};
-
 const CALENDAR = [
 {"label":"UFC Fight Night: Nurmagomedov vs. Song","date":"2026-08-29T10:00Z","id":"600060620"},
 {"label":"UFC Fight Night: Hooker vs. Parnasse","date":"2026-09-05T19:00Z","id":"600059993"},
@@ -203,10 +182,8 @@ const CALENDAR = [
 {"label":"UFC 333: Volkanovski vs. Evloev","date":"2026-10-24T17:00Z","id":"600061267"},
 {"label":"UFC Fight Night: Bonfim vs. Brady","date":"2026-11-08T01:00Z","id":"600061268"}
 ];
-
 let calendarLive = CALENDAR;
 let view = "event"; // "event" | "upcoming"
-
 let liveMode = false;
 let timer = null;
 let browsing = false;   // true while viewing a card opened from the Upcoming list
@@ -214,7 +191,6 @@ let lastFetch = null;   // ms timestamp of the data currently on screen
 let odds = null;        // {fights:[{a,b,oa,ob}], updated}
 let oddsIndex = null;   // normalized "a|b" -> fight
 let oddsErr = null;     // why odds are missing, shown in the header
-
 /* ---- odds ---- */
 function normName(s){
   return String(s||"").normalize("NFKD").replace(/[̀-ͯ]/g,"").toLowerCase()
@@ -257,17 +233,17 @@ async function loadOdds(){
     if(view==="event"&&lastData) render(lastData,lastLive,browsing);
   }catch(e){
     odds=null; oddsIndex=null;
-    // Say why odds are missing instead of rendering a card that looks fine but
-    // silently has none. Opening index.html directly is the usual cause: fetch
-    // cannot read a sibling file over file://, so it needs to be served.
+    // Odds silently missing is confusing, so log why. Opening index.html
+    // directly is the usual cause: fetch cannot read a sibling file over
+    // file://, so odds.json never loads and the page must be served.
     const served=location.protocol==="http:"||location.protocol==="https:";
     oddsErr=served
       ? "odds unavailable ("+(e&&e.message?e.message:"fetch failed")+")"
-      : "odds need a server (opened as "+location.protocol+")";
+      : "odds need a server: open over http://, not "+location.protocol;
+    console.warn("[odds] "+oddsErr);
     if(view==="event"&&lastData) render(lastData,lastLive,browsing);
   }
 }
-
 function esc(s){const d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML;}
 function localTime(iso){
   try{return new Date(iso).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});}catch(e){return "";}
@@ -295,8 +271,6 @@ function state(f){
   if(cs.some(c=>c.winner)) return "post";
   return (f.status&&f.status.type&&f.status.type.state)||"pre";
 }
-
-
 function harvestCalendar(data){
   try{
     const c=data.leagues[0].calendar||[];
@@ -309,19 +283,28 @@ function harvestCalendar(data){
     if(out.length) calendarLive=out;
   }catch(_){}
 }
-
 function ymd(iso){
   const d=new Date(iso);
   return d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,"0")+String(d.getUTCDate()).padStart(2,"0");
 }
-
+// One header button, top right: it swaps between the card and the upcoming list.
+function setNav(label, fn){
+  const b=document.getElementById("navBtn");
+  if(!b) return;
+  b.textContent=label;
+  b.setAttribute("onclick", fn+"()");
+}
+function backToCard(){
+  view="event";            // keep state honest: loadOdds re-renders only on the card
+  if(lastData) render(lastData,lastLive,false); else load();
+}
 function renderUpcoming(){
   view="upcoming"; browsing=false;
+  setNav("Card", "backToCard");
   const app=document.getElementById("app");
   document.getElementById("evName").textContent="Upcoming events";
   document.getElementById("evVenue").textContent="";
   document.getElementById("evMain").textContent="";
-  document.getElementById("evEta").innerHTML="";
   const now=Date.now();
   const future=calendarLive.filter(e=>!/contender series/i.test(e.label)&&new Date(e.date).getTime()>now-6*3600e3).slice(0,10);
   let html='<div class="section-label">Next · '+future.length+'</div>';
@@ -338,7 +321,6 @@ function renderUpcoming(){
   html+='<div class="footnote">Tap an event for the full card. Detail needs the live feed; in Snapshot mode ESPN can\'t be reached.</div>';
   app.innerHTML=html;
 }
-
 async function openEvent(id,dateStr){
   const app=document.getElementById("app");
   app.innerHTML='<div class="empty">Loading card…</div>';
@@ -365,7 +347,6 @@ async function openEvent(id,dateStr){
       +'<button class="refresh" onclick="renderUpcoming()">Back to upcoming</button>';
   }
 }
-
 function pickEvent(data){
   const evs=(data&&data.events)||[];
   if(!evs.length) return null;
@@ -377,7 +358,6 @@ function pickEvent(data){
   }
   return best;
 }
-
 function orderedFights(ev){
   let fights=(ev.competitions||[]).slice();
   fights.sort((a,b)=>new Date(a.date)-new Date(b.date) || 0);
@@ -386,7 +366,6 @@ function orderedFights(ev){
   if(fights.length>1 && p(fights[0])===5 && p(fights[fights.length-1])!==5) fights.reverse();
   return fights;
 }
-
 function fightRow(f, cls, mainCardStart){
   const [a,b]=names(f);
   const wc=(f.type&&f.type.abbreviation)||"";
@@ -426,13 +405,6 @@ function fightRow(f, cls, mainCardStart){
   let mid="vs";
   if(st==="post") mid=a.winner?"&#9664;":"&#9654;";
   html+='<div class="vsrow">'+side(a,"left",od?od.a:null,od?od.b:null)+'<div class="vsmid">'+mid+'</div>'+side(b,"right",od?od.b:null,od?od.a:null)+'</div>';
-  if(dv){
-    // market split: wider side = the favourite. Purely a read of the two prices.
-    html+='<div class="probbar" role="img" aria-label="Market odds: '
-      +esc(a.name)+' '+esc(pctText(dv.a))+', '+esc(b.name)+' '+esc(pctText(dv.b))+'">'
-      +'<span class="pa" style="width:'+(dv.a*100).toFixed(1)+'%"></span>'
-      +'<span class="pb" style="width:'+(dv.b*100).toFixed(1)+'%"></span></div>';
-  }
   if(st==="post"){
     const det=(f.status&&f.status.type&&(f.status.type.detail||f.status.type.description))||"Final";
     const rd=f.status&&f.status.period?(" · R"+f.status.period):"";
@@ -445,7 +417,6 @@ function fightRow(f, cls, mainCardStart){
   html+='</div></div>';
   return html;
 }
-
 function cageMin(f){
   const p=(f.status&&f.status.period)||0;
   if(!p) return null;
@@ -454,13 +425,11 @@ function cageMin(f){
   const inRound=m?((+m[1])+(+m[2])/60):5;
   return (p-1)*5+inRound;
 }
-
 function assignEtas(done, now, pre){
   const cages=done.map(cageMin).filter(x=>x!=null);
   // observed pace once fights are in the books, otherwise a typical ~9min cage time
   const avg=cages.length?cages.reduce((a,b)=>a+b,0)/cages.length:9;
   const perFight=(avg+10)*60000; // cage time + walkouts, replays, interviews
-
   if(!done.length&&!now.length){
     // Nothing has happened yet, so pace forward from each block's scheduled start.
     // orderedFights() hands us running order already (opener first, main event last).
@@ -473,7 +442,6 @@ function assignEtas(done, now, pre){
     });
     return;
   }
-
   let base=Date.now();
   if(now.length){
     // remaining cage time for the live fight (at least a couple of minutes) + turnaround
@@ -495,59 +463,32 @@ function assignEtas(done, now, pre){
   });
 }
 function etaTime(ms){return new Date(ms).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
-
 let lastData=null, lastLive=false;
-
 function render(data, isLive, browsing){
   lastData=data; lastLive=isLive;
   harvestCalendar(data);
   const ev=pickEvent(data);
   const app=document.getElementById("app");
-  const badge=document.getElementById("badge");
-  const badgeText=document.getElementById("badgeText");
-  badge.className="badge "+(isLive?"live":"snap");
-  badgeText.textContent=isLive?"Live feed":"Snapshot";
-  document.getElementById("updated").textContent="Updated "+new Date(lastFetch||Date.now()).toLocaleTimeString()
-    +(odds&&odds.updated?" · odds ufc.com":(oddsErr?" · "+oddsErr:""))+" · build "+BUILD;
-
   if(!ev){
     renderUpcoming();
     return;
   }
-
   document.getElementById("evName").textContent=ev.name||"UFC";
   const v=(ev.venues&&ev.venues[0])||(ev.competitions&&ev.competitions[0]&&ev.competitions[0].venue)||null;
   document.getElementById("evVenue").textContent=v?(v.fullName+(v.address&&v.address.city?(" · "+v.address.city):"")):"";
-
   const fights=orderedFights(ev);
   const dates=[...new Set(fights.map(f=>f.date))].sort();
   const mainCardStart=dates.length>1?dates[dates.length-1]:null;
   document.getElementById("evMain").innerHTML=mainCardStart
     ? "Main card <b>"+esc(localTime(mainCardStart))+"</b> · "+esc(localDay(mainCardStart))
     : "Starts <b>"+esc(localTime(ev.date))+"</b> · "+esc(localDay(ev.date));
-
   const now=fights.filter(f=>state(f)==="in");
   const pre=fights.filter(f=>state(f)==="pre");
   const done=fights.filter(f=>state(f)==="post").reverse();
-
+  // per-fight estimates still drive the "est ~" time on each row
   assignEtas(done,now,pre);
-  const fiveRd=fights.filter(f=>((f.format&&f.format.regulation&&f.format.regulation.periods)||3)===5);
-  const mainFight=fiveRd[fiveRd.length-1]||fights[fights.length-1]||null; // last 5-rounder = main event
-  const eta=(mainFight&&mainFight._eta)?(mainFight._eta+5*60000):null;
-  const etaEl=document.getElementById("evEta");
-  if(eta){
-    const outCount=pre.filter(f=>f!==mainFight).length;
-    const outTxt=outCount===0?(now.length?"after the live fight":"up next")
-      :outCount+(outCount===1?" fight":" fights")+(now.length?" + live":"")+" out";
-    etaEl.innerHTML='Main event est <b>~'
-      +esc(new Date(eta).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}))
-      +'</b> · '+esc(outTxt);
-    document.getElementById("evMain").innerHTML="";
-  } else { etaEl.innerHTML=""; }
-
-  let html=(browsing
-    ? '<div class="btnrow"><button class="refresh" onclick="renderUpcoming()">Back to upcoming</button></div>'
-    : '<div class="btnrow"><button class="refresh" onclick="load()">Refresh</button><button class="refresh alt" onclick="renderUpcoming()">Upcoming</button></div>');
+  setNav("Upcoming", "renderUpcoming");
+  let html="";
   if(!isLive && !done.length && !now.length){
     html+='<div class="empty">Snapshot was taken before the first fight, so no results exist in this data. Winners, result lines and clip links appear once the app has a live feed and fights go final. Open this file in Safari or host it to go live.</div>';
   }
@@ -574,7 +515,6 @@ function render(data, isLive, browsing){
         segOf[d]={label:ladder[k],cls:clsLadder[k]};
       });
     }
-
     html+='<div class="section-label">Card · '+done.length+' of '+total+' done</div>';
     const seq=[];
     const list=pre.slice().reverse();
@@ -594,11 +534,8 @@ function render(data, isLive, browsing){
   if(!now.length&&!pre.length&&!done.length){
     html+='<div class="empty">Card is empty.</div>';
   }
-
-
   app.innerHTML=html;
 }
-
 async function load(){
   try{
     const ctrl=new AbortController();
