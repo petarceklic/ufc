@@ -160,7 +160,7 @@
 <main id="app"></main>
 
 <script>
-const BUILD = "v10";
+const BUILD = "v11";
 const ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard";
 const POLL_MS = 20000;
 const ODDS_URL = "odds.json"; // written by .github/workflows/odds.yml (scraped from ufc.com)
@@ -369,7 +369,7 @@ function fightRow(f, cls, mainCardStart){
     meta2='<span class="tag-live">Live '+esc(rd)+esc(ck)+"</span>";
   } else if(st==="pre"){
     meta2='<span>'+(cls&&cls.indexOf("next")===0?'<span class="tag-next">Next</span> · ':"")
-      +(f._eta?("est ~"+esc(etaTime(f._eta))):esc(localTime(f.date)))+"</span>";
+      +(f._eta?('<span class="eta">est ~'+esc(etaTime(f._eta))+'</span>'):esc(localTime(f.date)))+"</span>";
   } else {
     meta2="<span>Final</span>";
   }
@@ -398,8 +398,8 @@ function fightRow(f, cls, mainCardStart){
     const ck=(f.status&&f.status.displayClock&&f.status.displayClock!=="-")?(" "+f.status.displayClock):"";
     html+='<div class="result">'+esc(det)+esc(rd)+esc(ck)+'</div>';
     const w=a.winner?a:b, l=a.winner?b:a;
-    const q=encodeURIComponent("UFC "+w.name+" vs "+l.name+" finish");
-    html+='<div class="cliplinks"><a href="https://x.com/search?q='+q+'&f=video" target="_blank" rel="noopener">Clip &#8599;</a></div>';
+    const q=encodeURIComponent('"'+w.name+'" "'+l.name+'" filter:videos');
+    html+='<div class="cliplinks"><a href="https://x.com/search?q='+q+'&amp;f=video&amp;src=typed_query" target="_blank" rel="noopener">Clip &#8599;</a></div>';
   }
   html+='</div></div>';
   return html;
@@ -415,18 +415,43 @@ function cageMin(f){
 }
 
 function assignEtas(done, now, pre){
-  // pacing only exists once the event is underway
-  if(!done.length&&!now.length){ pre.forEach(f=>{delete f._eta;}); return; }
   const cages=done.map(cageMin).filter(x=>x!=null);
+  // observed pace once fights are in the books, otherwise a typical ~9min cage time
   const avg=cages.length?cages.reduce((a,b)=>a+b,0)/cages.length:9;
   const perFight=(avg+10)*60000; // cage time + walkouts, replays, interviews
+
+  if(!done.length&&!now.length){
+    // Nothing has happened yet, so pace forward from each block's scheduled start.
+    // orderedFights() hands us running order already (opener first, main event last).
+    const byDate={};
+    pre.forEach(f=>{(byDate[f.date]=byDate[f.date]||[]).push(f);});
+    Object.keys(byDate).forEach(d=>{
+      const start=Date.parse(d);
+      if(isNaN(start)){ byDate[d].forEach(f=>{delete f._eta;}); return; }
+      byDate[d].forEach((f,i)=>{f._eta=start+i*perFight;});
+    });
+    return;
+  }
+
   let base=Date.now();
   if(now.length){
     // remaining cage time for the live fight (at least a couple of minutes) + turnaround
     const el=cageMin(now[0])||0;
     base+=(Math.max(avg-el,2)+10)*60000;
   }
-  pre.forEach((f,i)=>{f._eta=base+i*perFight;});
+  // Pace forward from the live fight. A later block cannot open before its scheduled
+  // time, so when we run early we push the whole remaining run back by that gap --
+  // shifting rather than clamping, so fights never pile up on one timestamp.
+  let shift=0, seen={};
+  pre.forEach((f,i)=>{
+    const est=base+i*perFight+shift;
+    const start=Date.parse(f.date);
+    if(!isNaN(start)&&!seen[f.date]){
+      seen[f.date]=1;
+      if(start>est) shift+=start-est; // block opener sets the floor for everything after
+    }
+    f._eta=base+i*perFight+shift;
+  });
 }
 function etaTime(ms){return new Date(ms).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
 
@@ -487,12 +512,27 @@ function render(data, isLive, browsing){
   }
   const total=pre.length+now.length+done.length;
   if(total){
-    // segment per start time: last group = main card, then prelims, then early prelims
-    const segNames=["Main card","Prelims","Early prelims"];
-    const segCls=["seg-main","seg-prelim","seg-early"];
+    // Segment per start time. Groups run earliest -> latest; the LAST is always the
+    // main card. Earlier groups are named from the end so a 3-block card reads
+    // early prelims / prelims / main card, and a 2-block card reads prelims / main card.
+    // Fight Nights sometimes ship only early prelims + prelims (no 5-rounder in the
+    // last block); in that case shift the names down one so nothing is called a main card.
     const segOf={};
-    dates.slice().reverse().forEach((d,i)=>{segOf[d]={label:segNames[Math.min(i,2)],cls:segCls[Math.min(i,2)]}});
     const multi=dates.length>1;
+    {
+      const has5=d=>fights.some(f=>f.date===d&&((f.format&&f.format.regulation&&f.format.regulation.periods)||3)===5);
+      // the closing block is a real main card if it has a 5-round fight, or if it is
+      // the only block, or if no block has one (data missing rounds -> assume normal card)
+      const last=dates[dates.length-1];
+      const mainIsLast=dates.length<2||has5(last)||!dates.some(has5);
+      const ladder=["Main card","Prelims","Early prelims"];
+      const clsLadder=["seg-main","seg-prelim","seg-early"];
+      const offset=mainIsLast?0:1; // no main card present -> everything is a prelim block
+      dates.slice().reverse().forEach((d,i)=>{
+        const k=Math.min(i+offset,ladder.length-1);
+        segOf[d]={label:ladder[k],cls:clsLadder[k]};
+      });
+    }
 
     html+='<div class="section-label">Card · '+done.length+' of '+total+' done</div>';
     const seq=[];
