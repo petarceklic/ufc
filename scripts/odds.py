@@ -135,6 +135,35 @@ def main():
         json.dump(out, fh, separators=(",", ":"), ensure_ascii=False)
         fh.write("\n")
     print(f"wrote odds.json: {len(fights)} fights across {len(events)} events", file=sys.stderr)
+    embed_fallback(out)
+
+
+def embed_fallback(out):
+    """Mirror the priced odds into index.html's ODDS_FALLBACK constant.
+
+    index.html fetches odds.json at runtime, which fails when the file is
+    opened directly (file:// cannot fetch a sibling). The embedded copy keeps
+    prices visible in that case. Only priced rows go in, to keep it small.
+    """
+    slim = {k: out[k] for k in ("updated", "source", "events")}
+    slim["fights"] = [f for f in out["fights"] if f["oa"] is not None]
+    blob = json.dumps(slim, separators=(",", ":"), ensure_ascii=False)
+    try:
+        with open("index.html") as fh:
+            page = fh.read()
+    except OSError as e:
+        print(f"skip fallback embed: {e}", file=sys.stderr)
+        return
+    new, n = re.subn(r"^const ODDS_FALLBACK = .*?;$",
+                     "const ODDS_FALLBACK = " + blob.replace("\\", "\\\\") + ";",
+                     page, count=1, flags=re.M | re.S)
+    if not n:
+        print("skip fallback embed: ODDS_FALLBACK not found in index.html", file=sys.stderr)
+        return
+    if new != page:
+        with open("index.html", "w") as fh:
+            fh.write(new)
+        print(f"embedded {len(slim['fights'])} priced fights into index.html", file=sys.stderr)
 
 
 if __name__ == "__main__":
