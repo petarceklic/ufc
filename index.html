@@ -149,7 +149,7 @@
 </header>
 <main id="app"></main>
 <script>
-const BUILD = "v21";
+const BUILD = "v22";
 const ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard";
 const POLL_MS = 20000;
 const ODDS_URL = "odds.json"; // written by .github/workflows/odds.yml (scraped from ufc.com)
@@ -433,11 +433,25 @@ function cageMin(f){
   const inRound=m?((+m[1])+(+m[2])/60):5;
   return (p-1)*5+inRound;
 }
+const rdCount=f=>((f.format&&f.format.regulation&&f.format.regulation.periods)||3);
+/* Five-rounders run longer: across 115 finished fights pulled from the ESPN
+   feed, 3-round bouts averaged 9.9 min of cage time and 5-rounders 15.5 --
+   about 1.56x. Pacing every fight the same makes a main card with two or
+   three 5-rounders finish far earlier than estimated. */
+const FIVE_RD_FACTOR=1.56;
+const TURNAROUND=10; // walkouts, replays, interviews between fights
+
 function assignEtas(done, now, pre){
-  const cages=done.map(cageMin).filter(x=>x!=null);
-  // observed pace once fights are in the books, otherwise a typical ~9min cage time
-  const avg=cages.length?cages.reduce((a,b)=>a+b,0)/cages.length:9;
-  const perFight=(avg+10)*60000; // cage time + walkouts, replays, interviews
+  // Learn the pace from finished fights, normalising each to a 3-round
+  // equivalent so a 5-rounder early on does not inflate the whole card.
+  const norm=done.map(f=>{
+    const c=cageMin(f);
+    return c==null?null:(rdCount(f)===5?c/FIVE_RD_FACTOR:c);
+  }).filter(x=>x!=null);
+  const base3=norm.length?norm.reduce((a,b)=>a+b,0)/norm.length:9.9;
+  // minutes to allow for one fight, by its own round count
+  const slot=f=>(base3*(rdCount(f)===5?FIVE_RD_FACTOR:1)+TURNAROUND)*60000;
+
   if(!done.length&&!now.length){
     // Nothing has happened yet, so pace forward from each block's scheduled start.
     // orderedFights() hands us running order already (opener first, main event last).
@@ -446,28 +460,28 @@ function assignEtas(done, now, pre){
     Object.keys(byDate).forEach(d=>{
       const start=Date.parse(d);
       if(isNaN(start)){ byDate[d].forEach(f=>{delete f._eta;}); return; }
-      byDate[d].forEach((f,i)=>{f._eta=start+i*perFight;});
+      let t=start;
+      byDate[d].forEach(f=>{ f._eta=t; t+=slot(f); }); // each fight opens when the last ends
     });
     return;
   }
-  let base=Date.now();
+
+  let t=Date.now();
   if(now.length){
     // remaining cage time for the live fight (at least a couple of minutes) + turnaround
-    const el=cageMin(now[0])||0;
-    base+=(Math.max(avg-el,2)+10)*60000;
+    const live=now[0];
+    const expect=base3*(rdCount(live)===5?FIVE_RD_FACTOR:1);
+    t+=(Math.max(expect-(cageMin(live)||0),2)+TURNAROUND)*60000;
   }
-  // Pace forward from the live fight. A later block cannot open before its scheduled
-  // time, so when we run early we push the whole remaining run back by that gap --
-  // shifting rather than clamping, so fights never pile up on one timestamp.
-  let shift=0, seen={};
-  pre.forEach((f,i)=>{
-    const est=base+i*perFight+shift;
+  // Pace forward from the live fight. A later block cannot open before its
+  // scheduled time, so push the whole remaining run back rather than clamping,
+  // which would pile several fights onto one timestamp.
+  const seen={};
+  pre.forEach(f=>{
     const start=Date.parse(f.date);
-    if(!isNaN(start)&&!seen[f.date]){
-      seen[f.date]=1;
-      if(start>est) shift+=start-est; // block opener sets the floor for everything after
-    }
-    f._eta=base+i*perFight+shift;
+    if(!isNaN(start)&&!seen[f.date]){ seen[f.date]=1; if(start>t) t=start; }
+    f._eta=t;
+    t+=slot(f);
   });
 }
 function etaTime(ms){return new Date(ms).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
