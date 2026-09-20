@@ -149,7 +149,7 @@
 </header>
 <main id="app"></main>
 <script>
-const BUILD = "v20";
+const BUILD = "v21";
 const ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard";
 const POLL_MS = 20000;
 const ODDS_URL = "odds.json"; // written by .github/workflows/odds.yml (scraped from ufc.com)
@@ -413,11 +413,14 @@ function fightRow(f, cls, mainCardStart){
     const ck=(f.status&&f.status.displayClock&&f.status.displayClock!=="-")?(" "+f.status.displayClock):"";
     html+='<div class="result">'+esc(det)+esc(rd)+esc(ck)+'</div>';
     const w=a.winner?a:b, l=a.winner?b:a;
-    // f=video selects X's Videos tab. Keep the query plain: "filter:videos" is
-    // not real search syntax (X matches it as literal text and finds nothing),
-    // and src=typed_query makes X honour the query over the tab, landing on Photos.
-    const q=encodeURIComponent(w.name+" "+l.name);
-    html+='<div class="cliplinks"><a href="https://x.com/search?q='+q+'&amp;f=video" target="_blank" rel="noopener">Clip &#8599;</a></div>';
+    // Filter in the QUERY, not the tab. f=video only picks X's Videos tab
+    // client-side, and on iOS x.com/search matches the X app's universal-link
+    // catch-all, so the app opens it and re-derives the tab itself -- the param
+    // never applies and you land on Photos. "filter:videos" constrains the
+    // results instead, so it survives the hand-off to the app. f=live is a
+    // harmless hint: honoured on the web (Latest), ignored in the app.
+    const q=encodeURIComponent(w.name+" "+l.name+" filter:videos");
+    html+='<div class="cliplinks"><a href="https://x.com/search?q='+q+'&amp;f=live" target="_blank" rel="noopener">Clip &#8599;</a></div>';
   }
   html+='</div></div>';
   return html;
