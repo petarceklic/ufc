@@ -112,6 +112,7 @@
   .corner.lost .headshot img{filter:grayscale(1)}
   .fight.done .corner.won .fname::after{content:" ✓"}
   .result{font-size:11px;color:var(--dim);margin-top:10px;letter-spacing:.04em;text-align:center}
+  .result .method{color:var(--text);font-weight:700}
   .cliplinks{display:flex;gap:8px;margin-top:10px;justify-content:center;align-items:center}
   .cliplinks a{
     font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
@@ -149,7 +150,7 @@
 </header>
 <main id="app"></main>
 <script>
-const BUILD = "v22";
+const BUILD = "v23";
 const ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard";
 const POLL_MS = 20000;
 const ODDS_URL = "odds.json"; // written by .github/workflows/odds.yml (scraped from ufc.com)
@@ -408,10 +409,10 @@ function fightRow(f, cls, mainCardStart){
   if(st==="post") mid=a.winner?"&#9664;":"&#9654;";
   html+='<div class="vsrow">'+side(a,"left",od?od.a:null,od?od.b:null)+'<div class="vsmid">'+mid+'</div>'+side(b,"right",od?od.b:null,od?od.a:null)+'</div>';
   if(st==="post"){
-    const det=(f.status&&f.status.type&&(f.status.type.detail||f.status.type.description))||"Final";
+    const det=methodText(f);
     const rd=f.status&&f.status.period?(" · R"+f.status.period):"";
     const ck=(f.status&&f.status.displayClock&&f.status.displayClock!=="-")?(" "+f.status.displayClock):"";
-    html+='<div class="result">'+esc(det)+esc(rd)+esc(ck)+'</div>';
+    html+='<div class="result"><span class="method">'+esc(det)+'</span>'+esc(rd)+esc(ck)+'</div>';
     const w=a.winner?a:b, l=a.winner?b:a;
     // Filter in the QUERY, not the tab. f=video only picks X's Videos tab
     // client-side, and on iOS x.com/search matches the X app's universal-link
@@ -424,6 +425,41 @@ function fightRow(f, cls, mainCardStart){
   }
   html+='</div></div>';
   return html;
+}
+/* ---- finish method ----
+   The live scoreboard says only "Final" in status.type.detail. The method lives in
+   ESPN's per-fight status (core API, CORS-open) as result {displayName:"KO/TKO",
+   displayDescription:"Punches"}. Fetch it once per finished fight and cache it. */
+const CORE_URL="https://sports.core.api.espn.com/v2/sports/mma/leagues/ufc/events/";
+const results={}; // competition id -> result object | "pending" | failure time (ms)
+function fmtResult(r){
+  let m=r.displayName||"";
+  const dec=m.match(/^Decision\s*-\s*(.+)$/i);
+  if(dec) return "Decision ("+dec[1].toLowerCase()+")";
+  return m+(r.displayDescription?" ("+r.displayDescription+")":"");
+}
+function methodText(f){
+  const t=(f.status&&f.status.type)||{};
+  if(t.detail&&t.detail!=="Final") return t.detail; // snapshot / older feeds carry it inline
+  const r=f.id&&results[f.id];
+  if(r&&r.displayName) return fmtResult(r);
+  // Until the core result lands, the play-by-play has a coarse "Unofficial Winner X".
+  const u=(f.details||[]).map(d=>d.type&&d.type.text||"").find(s=>/^Unofficial Winner /.test(s));
+  if(u){ const k=u.replace(/^Unofficial Winner /,""); return /^kotko$/i.test(k)?"KO/TKO":k; }
+  return t.description||"Final";
+}
+function loadResults(ev, done){
+  if(!ev||!ev.id) return; // snapshot has no ids
+  // a failed or empty lookup waits a poll before retrying, so the re-render below cannot loop
+  const need=done.filter(f=>f.id&&(!results[f.id]||(typeof results[f.id]==="number"&&Date.now()-results[f.id]>POLL_MS)));
+  if(!need.length) return;
+  need.forEach(f=>{results[f.id]="pending";});
+  Promise.all(need.map(f=>
+    fetch(CORE_URL+ev.id+"/competitions/"+f.id+"/status",{cache:"no-cache"})
+      .then(r=>r.ok?r.json():Promise.reject(new Error("HTTP "+r.status)))
+      .then(s=>{ results[f.id]=(s&&s.result&&s.result.displayName)?s.result:Date.now(); })
+      .catch(()=>{ results[f.id]=Date.now(); })
+  )).then(()=>{ if(view==="event"&&lastData) render(lastData,lastLive,browsing); });
 }
 function cageMin(f){
   const p=(f.status&&f.status.period)||0;
@@ -509,6 +545,7 @@ function render(data, isLive, browsing){
   const done=fights.filter(f=>state(f)==="post").reverse();
   // per-fight estimates still drive the "est ~" time on each row
   assignEtas(done,now,pre);
+  loadResults(ev,done);
   setNav("Upcoming", "renderUpcoming");
   let html="";
   if(!isLive && !done.length && !now.length){
